@@ -3,17 +3,30 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/yaml"
 )
 
 const (
-	resolveUse = "resolve"
+	resolveUse = "genk8s"
 )
 
-type resolveCmdOptions struct {
-	configFilePath string
-	subject        string
+type genk8sCmdOptions struct {
+	resourceType  string
+	numContainers int
+	registryHost  string
+	numReplicas   int
+	numReferrers  int
+	namespace     string
+	outputPath    string
+	name          string
+	group         string
 }
 
 func NewCmdGenK8s(argv ...string) *cobra.Command {
@@ -21,9 +34,10 @@ func NewCmdGenK8s(argv ...string) *cobra.Command {
 		argv = []string{os.Args[0]}
 	}
 
-	eg := fmt.Sprintf(`  # Generates a kubernetes resource template`)
+	eg := fmt.Sprintf(`    # Generates a kubernetes resource template
+    %s genk8s`, strings.Join(argv, " "))
 
-	// var opts resolveCmdOptions
+	var opts genk8sCmdOptions
 
 	cmd := &cobra.Command{
 		Use:     resolveUse,
@@ -31,13 +45,115 @@ func NewCmdGenK8s(argv ...string) *cobra.Command {
 		Example: eg,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return nil
+			return createResource(opts)
 		},
 	}
 
-	// flags := cmd.Flags()
+	flags := cmd.Flags()
 
-	// flags.StringVarP(&opts.subject, "subject", "s", "", "Subject Reference")
-	// flags.StringVarP(&opts.configFilePath, "config", "c", "", "Config File Path")
+	flags.StringVarP(&opts.resourceType, "resource-type", "t", "deployment", "Resource Type (deployment, job, pod)")
+	flags.StringVar(&opts.registryHost, "registry-host", "docker.io", "Registry Host")
+	flags.IntVarP(&opts.numContainers, "num-containers", "c", 1, "Number of containers")
+	flags.IntVar(&opts.numReplicas, "num-replicas", 1, "Number of replicas")
+	flags.IntVar(&opts.numReferrers, "num-referrers", 1, "Number of referrers")
+	flags.StringVarP(&opts.namespace, "namespace", "n", "default", "Namespace")
+	flags.StringVarP(&opts.outputPath, "output-file", "f", "", "Output file name")
+	flags.StringVar(&opts.name, "name", "", "Name")
+	flags.StringVar(&opts.group, "group", "", "Group")
 	return cmd
+}
+
+func createResource(opts genk8sCmdOptions) error {
+	imageName := getImageName(opts.resourceType, opts.numReferrers)
+	returnTemplate := ""
+	var err error
+	castedNumReplicas := int32(opts.numReplicas)
+	switch opts.resourceType {
+	case "deployment":
+		name := opts.name
+		group := opts.group
+		if name == "" {
+			name = "{{.Name}}"
+		}
+		if group == "" {
+			group = "{{.Group}}"
+		}
+		returnTemplate, err = createDeployment(&castedNumReplicas, opts.numContainers, imageName, opts.registryHost, opts.namespace, name, group)
+		if err != nil {
+			return err
+		}
+	// case "job":
+	// 	return createJob(numReplicas, numContainers, imageName, registryName, namespace)
+	// case "pod":
+	// 	return createPod(numReplicas, numContainers, imageName, registryName, namespace)
+	default:
+		return fmt.Errorf("invalid resource type: %s", opts.resourceType)
+	}
+
+	if opts.outputPath != "" {
+		f, err := os.Create(opts.outputPath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.WriteString(returnTemplate)
+		if err != nil {
+			return err
+		}
+	} else {
+		fmt.Println(returnTemplate)
+	}
+	return nil
+}
+
+func createDeployment(numReplicas *int32, numContainers int, imageName string, registryName string, namespace string, name string, group string) (string, error) {
+	containers := make([]corev1.Container, numContainers)
+	for i := 0; i < numContainers; i++ {
+		containers[i] = corev1.Container{
+			Name:  fmt.Sprintf("%s%v", imageName, i+1),
+			Image: fmt.Sprintf("%s/%s:%v", registryName, imageName, i+1),
+		}
+	}
+	template := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"group": group,
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: numReplicas,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name":  name,
+						"group": group,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: containers,
+				},
+			},
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": name,
+				},
+			},
+		},
+	}
+
+	bytes, err := yaml.Marshal(template)
+	if err != nil {
+		return "", fmt.Errorf("failed to create deployment: %v", err)
+	}
+	return string(bytes), nil
+}
+
+func getImageName(resourceType string, numReferrers int) string {
+	return fmt.Sprintf("%s-%d-refs", resourceType, numReferrers)
 }

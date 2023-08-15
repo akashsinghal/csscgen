@@ -18,6 +18,4 @@ vet: ## Run go vet against code.
 
 .PHONY: build-cli
 build-cli: 
-	go build --ldflags="$(LDFLAGS)" -cover \
-	-coverpkg=github.com/akashsinghal/csscgen/cmd/... \
-	-o ./bin/${BINARY_NAME} ./cmd/${BINARY_NAME}
+	go build --ldflags="$(LDFLAGS)" -o ./bin/${BINARY_NAME} ./cmd/${BINARY_NAME}
