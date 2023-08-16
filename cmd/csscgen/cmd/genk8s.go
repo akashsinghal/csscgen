@@ -64,7 +64,7 @@ func NewCmdGenK8s(argv ...string) *cobra.Command {
 }
 
 func createResource(opts genk8sCmdOptions) error {
-	imageName := getImageName(opts.resourceType, opts.numReferrers)
+	imageName := getImageName(opts.numContainers, opts.numReferrers)
 	returnTemplate := ""
 	var err error
 	castedNumReplicas := int32(opts.numReplicas)
@@ -154,6 +154,6 @@ func createDeployment(numReplicas *int32, numContainers int, imageName string, r
 	return string(bytes), nil
 }
 
-func getImageName(resourceType string, numReferrers int) string {
-	return fmt.Sprintf("%s-%d-refs", resourceType, numReferrers)
+func getImageName(numContainers int, numReferrers int) string {
+	return fmt.Sprintf("%d-containers-%d-referrers", numContainers, numReferrers)
 }
