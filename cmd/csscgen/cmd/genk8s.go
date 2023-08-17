@@ -56,7 +56,7 @@ func NewCmdGenK8s(argv ...string) *cobra.Command {
 	flags.IntVarP(&opts.numContainers, "num-containers", "c", 1, "Number of containers")
 	flags.IntVar(&opts.numReplicas, "num-replicas", 1, "Number of replicas")
 	flags.IntVar(&opts.numReferrers, "num-referrers", 1, "Number of referrers")
-	flags.StringVarP(&opts.namespace, "namespace", "n", "default", "Namespace")
+	flags.StringVarP(&opts.namespace, "namespace", "n", "", "Namespace")
 	flags.StringVarP(&opts.outputPath, "output-file", "f", "", "Output file name")
 	flags.StringVar(&opts.name, "name", "", "Name")
 	flags.StringVar(&opts.group, "group", "", "Group")
@@ -114,18 +114,29 @@ func createDeployment(numReplicas *int32, numContainers int, imageName string, r
 			Image: fmt.Sprintf("%s/%s:%v", registryName, imageName, i+1),
 		}
 	}
-	template := &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
+	var objectMeta metav1.ObjectMeta
+	if namespace != "" {
+		objectMeta = metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
 				"group": group,
 			},
+		}
+	} else {
+		objectMeta = metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				"group": group,
+			},
+		}
+	}
+	template := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
 		},
+		ObjectMeta: objectMeta,
 		Spec: appsv1.DeploymentSpec{
 			Replicas: numReplicas,
 			Template: corev1.PodTemplateSpec{
