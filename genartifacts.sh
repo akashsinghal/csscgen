@@ -23,8 +23,7 @@ fi
 # for each subject
 for ((i=1;i<=${num_subjects};i++)); do
   # build a unique scratch dockerfile and build image
-  echo $'FROM scratch\nCMD ["echo", "repository '${repo}' image '${i}'"]' > Dockerfile
-  docker build . -t ${registry}/${repo}:${i}
+  docker build github.com/wabbit-networks/net-monitor --build-arg="TEXT=repository ${repo} image ${i}" --build-arg="SLEEP=120m" -t ${registry}/${repo}:${i}
   # push new image to specified registry, repo, and tag
   docker push ${registry}/${repo}:${i}
   # delete Dockerfile and image created to reduce clutter
@@ -33,7 +32,7 @@ for ((i=1;i<=${num_subjects};i++)); do
   # add specified number of referrers to the image
   sleep 2s
   for ((j=1;j<=${num_referrers};j++)); do
-      notation sign --signature-format cose --key wabbit-networks-io ${registry}/${repo}:${i}
+      notation sign --signature-format cose --key wabbit-networks-io-pipeline ${registry}/${repo}:${i}
   done
 done
 set +e
