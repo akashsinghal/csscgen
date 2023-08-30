@@ -26,8 +26,6 @@ for ((i=1;i<=${num_subjects};i++)); do
   docker build github.com/wabbit-networks/net-monitor --build-arg="TEXT=repository ${repo} image ${i}" --build-arg="SLEEP=120m" -t ${registry}/${repo}:${i}
   # push new image to specified registry, repo, and tag
   docker push ${registry}/${repo}:${i}
-  # delete Dockerfile and image created to reduce clutter
-  rm Dockerfile
   docker image rm ${registry}/${repo}:${i}
   # add specified number of referrers to the image
   sleep 2s
