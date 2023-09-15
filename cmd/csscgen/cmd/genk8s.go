@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -82,8 +83,19 @@ func createResource(opts genk8sCmdOptions) error {
 		if err != nil {
 			return err
 		}
-	// case "job":
-	// 	return createJob(numReplicas, numContainers, imageName, registryName, namespace)
+	case "job":
+		name := opts.name
+		group := opts.group
+		if name == "" {
+			name = "{{.Name}}"
+		}
+		if group == "" {
+			group = "{{.Group}}"
+		}
+		returnTemplate, err = createJob(&castedNumReplicas, opts.namespace, name, opts.numContainers, imageName, opts.registryHost, group)
+		if err != nil {
+			return err
+		}
 	// case "pod":
 	// 	return createPod(numReplicas, numContainers, imageName, registryName, namespace)
 	default:
@@ -161,6 +173,62 @@ func createDeployment(numReplicas *int32, numContainers int, imageName string, r
 	bytes, err := yaml.Marshal(template)
 	if err != nil {
 		return "", fmt.Errorf("failed to create deployment: %v", err)
+	}
+	return string(bytes), nil
+}
+
+func createJob(numReplicas *int32, namespace string, jobName string, numContainers int, imageName string, registryName string, group string) (string, error) {
+	containers := make([]corev1.Container, numContainers)
+	for i := 0; i < numContainers; i++ {
+		containers[i] = corev1.Container{
+			Name:  fmt.Sprintf("%s%v", imageName, i+1),
+			Image: fmt.Sprintf("%s/%s:%v", registryName, imageName, i+1),
+		}
+	}
+	var objectMeta metav1.ObjectMeta
+	if namespace != "" {
+		objectMeta = metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"group": group,
+			},
+		}
+	} else {
+		objectMeta = metav1.ObjectMeta{
+			Name: jobName,
+			Labels: map[string]string{
+				"group": group,
+			},
+		}
+	}
+	jobCompletionMode := batchv1.IndexedCompletion
+	template := &batchv1.Job{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Job",
+			APIVersion: "batch/v1",
+		},
+		ObjectMeta: objectMeta,
+		Spec: batchv1.JobSpec{
+			Parallelism:    numReplicas,
+			Completions:    numReplicas,
+			CompletionMode: &jobCompletionMode,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"group": group,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers:    containers,
+					RestartPolicy: corev1.RestartPolicyOnFailure,
+				},
+			},
+		},
+	}
+	bytes, err := yaml.Marshal(template)
+	if err != nil {
+		return "", fmt.Errorf("failed to create job: %v", err)
 	}
 	return string(bytes), nil
 }
